@@ -1,0 +1,8 @@
+{
+  "name": "Remix صوت الإعلان — استوديو التعليق الصوتي المصري",
+  "description": "استوديو احترافي لتوليد إعلانات صوتية باللهجة المصرية الأصيلة لاستعادة حسابات فيسبوك وإنستغرام المعطلة مع هوك تشويقي وختام واتساب.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
