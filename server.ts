@@ -195,6 +195,11 @@ const DIALECT_TTS_DIRECTIONS: Record<
       "Native Italian commercial voiceover artist (Italiano standard). Warm, expressive, energetic Italian advertising intonation and crisp pronunciation.",
     scriptTarget: "Native Italian (Italiano pubblicitario naturale e coinvolgente)",
   },
+  "es-ES": {
+    ttsStyle:
+      "Native European Spanish commercial voiceover artist (Español de España). Crisp, energetic, persuasive Spanish advertising cadence and authentic Madrid pronunciation.",
+    scriptTarget: "Native Spanish / Spain (Español publicitario natural y persuasivo)",
+  },
 };
 
 function extractAudioFromResponse(response: {
@@ -594,7 +599,7 @@ app.post("/api/tts/generate", async (req, res) => {
     const selectedDialectKey =
       typeof dialectId === "string" && DIALECT_TTS_DIRECTIONS[dialectId]
         ? dialectId
-        : "ar-EG";
+        : "ar-MA";
     const dialectSpec = DIALECT_TTS_DIRECTIONS[selectedDialectKey];
 
     const styleBase = [
@@ -773,7 +778,7 @@ app.post("/api/script/generate", async (req, res) => {
     const selectedDialectKey =
       typeof dialectId === "string" && DIALECT_TTS_DIRECTIONS[dialectId]
         ? dialectId
-        : "ar-EG";
+        : "ar-MA";
     const dialectSpec = DIALECT_TTS_DIRECTIONS[selectedDialectKey];
     const isDialogue = scriptMode === "dialogue";
 
@@ -960,7 +965,7 @@ app.post("/api/script/chat", async (req, res) => {
     const selectedDialectKey =
       typeof dialectId === "string" && DIALECT_TTS_DIRECTIONS[dialectId]
         ? dialectId
-        : "ar-EG";
+        : "ar-MA";
     const dialectSpec = DIALECT_TTS_DIRECTIONS[selectedDialectKey];
     const mode = scriptMode === "dialogue" ? "dialogue" : "solo";
     const cleanBrand = typeof brandName === "string" ? brandName.trim().slice(0, 60) : "";
@@ -1002,7 +1007,7 @@ app.post("/api/script/chat", async (req, res) => {
       required: ["reply", "hasScript", "scriptMode"],
     };
 
-    const systemInstruction = `أنت كاتب إعلانات صوتية محترف ومخرج إبداعي في استوديو Hamza Ads.
+    const systemInstruction = `أنت كاتب إعلانات صوتية محترف ومخرج إبداعي في استوديو Nabra Ads.
 مهمتك مساعدة المستخدم في صياغة أفكاره إلى سكربت إعلاني جاهز للتسجيل الصوتي والمونتاج.
 - اللغة واللهجة المستهدفة للسكربت: ${dialectSpec.scriptTarget}
 - نمط الإعلان الافتراضي المطلوب حالياً: ${mode === "dialogue" ? "حوار ثنائي (Speaker A + Speaker B)" : "معلّق منفرد (هوك + عرض + ختام)"}
@@ -1074,7 +1079,7 @@ async function startServer() {
   }
 
   httpServer.listen(PORT, "0.0.0.0", () => {
-    console.log(`Hamza Ads Studio running on http://0.0.0.0:${PORT}`);
+    console.log(`Nabra Ads Studio running on http://0.0.0.0:${PORT}`);
   });
 }
 

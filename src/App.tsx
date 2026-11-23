@@ -115,8 +115,8 @@ export default function App() {
   const defaultCategory = AD_CATEGORIES[0];
 
   const [activeTab, setActiveTab] = useState<StudioTab>("preview");
-  const [selectedRegion, setSelectedRegion] = useState<RegionGroupId>("egypt_nile");
-  const [selectedDialectId, setSelectedDialectId] = useState<DialectId>("ar-EG");
+  const [selectedRegion, setSelectedRegion] = useState<RegionGroupId>("maghreb");
+  const [selectedDialectId, setSelectedDialectId] = useState<DialectId>("ar-MA");
 
   const [scriptMode, setScriptMode] = useState<ScriptMode>("solo");
   const [platformTarget, setPlatformTarget] = useState<PlatformTarget>("reels");
@@ -126,18 +126,34 @@ export default function App() {
   );
   const [selectedAngle, setSelectedAngle] = useState<AdAngleId>("suspense");
   const [adTopic, setAdTopic] = useState<string>(defaultCategory.defaultTopic);
-  const [ctaTarget, setCtaTarget] = useState<string>(defaultCategory.defaultCtaTarget);
+  const [ctaTarget, setCtaTarget] = useState<string>("صيفط لينا ميساج فـ الواتساب لي قدامك دابا ولا طلب من الليان");
   const [brandName, setBrandName] = useState<string>("");
 
-  const [hookText, setHookText] = useState<string>(defaultCategory.hook);
-  const [bodyText, setBodyText] = useState<string>(defaultCategory.body);
-  const [ctaText, setCtaText] = useState<string>(defaultCategory.cta);
+  const [hookText, setHookText] = useState<string>(
+    "تسنّا شوية!... كتقلب على منتوج لي يدوم معاك ويعطيك أحسن جودة بلا ما تخلّص أثمنة خيالية؟ سمع هاد العرض قبل ما يسالي!"
+  );
+  const [bodyText, setBodyText] = useState<string>(
+    "جمعنا ليك أحسن خامة وتقفيل ممتاز، مع ضمان استبدال حقيقي وتوصيل سريع حتى لباب دارك، واليوم بالضبط عندك تخفيض خاص بمناسبة إطلاق الكوليكسيون الجديدة."
+  );
+  const [ctaText, setCtaText] = useState<string>(
+    "الكمية لي باقية محدودة بزاف... شنو كتسنّا؟ تواصل معانا دابا فـ الواتساب لي قدامك وحجز الطلب ديالك!"
+  );
 
-  const [dialogueHookA, setDialogueHookA] = useState<string>(defaultCategory.dialogueHookA);
-  const [dialogueHookB, setDialogueHookB] = useState<string>(defaultCategory.dialogueHookB);
-  const [dialogueBodyA, setDialogueBodyA] = useState<string>(defaultCategory.dialogueBodyA);
-  const [dialogueBodyB, setDialogueBodyB] = useState<string>(defaultCategory.dialogueBodyB);
-  const [dialogueCtaB, setDialogueCtaB] = useState<string>(defaultCategory.dialogueCtaB);
+  const [dialogueHookA, setDialogueHookA] = useState<string>(
+    "يا صاحبي واش مازال كتخلّص الفلوس فـ منتوجات كيخسرو غير بعد سيمانتين؟!"
+  );
+  const [dialogueHookB, setDialogueHookB] = useState<string>(
+    "لا بلاتي... واش ما سمعتيش بالعرض الجديد ولا شنو؟"
+  );
+  const [dialogueBodyA, setDialogueBodyA] = useState<string>(
+    "أما عرض؟ راه جرّبنا بزاف وكولو غير هضرة ديال الإشهارات وصافي!"
+  );
+  const [dialogueBodyB, setDialogueBodyB] = useState<string>(
+    "هاد المرة بضمان استبدال حقيقي، جودة كتصبر سنين، وزايدون تخفيض ثلاثين فالمية غير اليوم وتوصيل لباب الدار."
+  );
+  const [dialogueCtaB, setDialogueCtaB] = useState<string>(
+    "شنو كتسنّا؟ صيفط ميساج فـ الواتساب لي قدامك ولحق على العرض قبل ما تسالي الكمية!"
+  );
 
   const [selectedVoice, setSelectedVoice] = useState<VoiceId>("Charon");
   const [secondVoice, setSecondVoice] = useState<VoiceId>("Kore");
@@ -205,7 +221,8 @@ export default function App() {
     if (selectedDialect.langFamily === "en") return "english";
     if (selectedDialect.langFamily === "fr") return "french";
     if (selectedDialect.langFamily === "it") return "italian";
-    return selectedRegion === "global" ? "english" : selectedRegion;
+    if (selectedDialect.langFamily === "es") return "spanish";
+    return selectedRegion === "global" ? "french" : selectedRegion;
   }, [selectedDialect.langFamily, selectedRegion]);
 
   const regionDialects = useMemo(() => {
@@ -260,6 +277,7 @@ export default function App() {
       catId === "english" ||
       catId === "french" ||
       catId === "italian" ||
+      catId === "spanish" ||
       selectedDialect.region !== found.region
     ) {
       setSelectedDialectId(found.defaultDialectId);
@@ -679,7 +697,7 @@ export default function App() {
             }}
             className="font-display text-lg font-extrabold tracking-tight text-slate-100 whitespace-nowrap shrink-0"
           >
-            Hamza Ads
+            Nabra Ads
           </a>
 
           <nav className="hidden md:flex items-center gap-6 text-sm font-medium text-slate-400">
@@ -733,18 +751,18 @@ export default function App() {
           <div className="flex flex-col lg:flex-row lg:items-end lg:justify-between gap-5">
             <div className="max-w-3xl">
               <div className="mb-2 flex flex-wrap items-center gap-2 text-xs text-slate-400">
-                <span>Hamza Ads Studio</span>
+                <span>Nabra Ads Studio</span>
                 <span aria-hidden="true">·</span>
                 <span>جميع اللهجات العربية</span>
                 <span aria-hidden="true">·</span>
-                <span>English · Français · Italiano</span>
+                <span>Français · Español · English · Italiano</span>
                 <span aria-hidden="true">·</span>
                 <span>معلّق منفرد أو حوار ثنائي</span>
                 <span aria-hidden="true">·</span>
                 <span>موسيقى خلفية + ماسترينج + SRT</span>
               </div>
               <h1 className="font-display text-2xl sm:text-3xl font-bold text-slate-100 leading-snug text-balance">
-                استوديو Hamza Ads المتكامل لإعلانات الصوت والمونتاج
+                استوديو Nabra Ads المتكامل لإعلانات الصوت والمونتاج
               </h1>
               <p className="mt-2 text-sm sm:text-base text-slate-400 leading-relaxed">
                 صمّم سكريبت إعلانك بأي لهجة عربية أو لغة عالمية بصوت منفرد أو حوار ثنائي مشوق، أضف موسيقى خلفية وطبّق تحسين البث الإذاعي لنقاء الصوت، وحمّل الملف النهائي WAV مع ملف الترجمة SRT جاهزاً للمونتاج.
@@ -832,8 +850,8 @@ export default function App() {
             </button>
           </div>
 
-          {/* 7 Quick Dialect & Language Categories */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-1.5 p-1 rounded-lg bg-[#0B0E14] border border-white/8 mb-4">
+          {/* 8 Quick Dialect & Language Categories (Maghreb first by default + Spain) */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-1.5 p-1 rounded-lg bg-[#0B0E14] border border-white/8 mb-4">
             {QUICK_DIALECT_CATEGORIES.map((cat) => {
               const active = activeQuickCategory === cat.id;
               return (
@@ -1066,7 +1084,7 @@ export default function App() {
                         type="text"
                         value={brandName}
                         onChange={(e) => setBrandName(e.target.value)}
-                        placeholder="مثال: Hamza Store"
+                        placeholder="مثال: Nabra Store"
                         className="w-full rounded-lg border border-white/10 bg-[#0B0E14] px-3.5 py-2 text-sm text-slate-100 placeholder:text-slate-600 focus:border-amber-500/60 focus:outline-none"
                       />
                     </div>
@@ -1076,14 +1094,14 @@ export default function App() {
                         htmlFor="cta-target"
                         className="block text-xs font-medium text-slate-400 mb-1.5"
                       >
-                        العميل يتواصل فين في آخر الإعلان؟
+                        كيف يتواصل العميل في ختام الإعلان؟
                       </label>
                       <input
                         id="cta-target"
                         type="text"
                         value={ctaTarget}
                         onChange={(e) => setCtaTarget(e.target.value)}
-                        placeholder="مثال: الواتساب اللي قدامك ده / اللينك في البايو"
+                        placeholder="مثال: عبر الواتساب الظاهر أمامك / الرابط في الوصف"
                         className="w-full rounded-lg border border-white/10 bg-[#0B0E14] px-3.5 py-2 text-sm text-slate-100 placeholder:text-slate-600 focus:border-amber-500/60 focus:outline-none"
                       />
                     </div>
@@ -1208,7 +1226,7 @@ export default function App() {
                         rows={2}
                         value={ctaText}
                         onChange={(e) => setCtaText(e.target.value)}
-                        placeholder="مستني إيه؟ كلمنا دلوقتي..."
+                        placeholder="ماذا تنتظر؟ تواصل معنا الآن..."
                         className="w-full rounded-lg border border-white/10 bg-[#0B0E14] px-4 py-3 text-sm sm:text-base text-slate-100 leading-relaxed placeholder:text-slate-600 focus:border-amber-500/60 focus:outline-none"
                       />
                     </div>
@@ -1557,7 +1575,7 @@ export default function App() {
 
                           <a
                             href={take.audioUrl}
-                            download={`hamza-ads-${take.dialectId}-${take.voiceId.toLowerCase()}.wav`}
+                            download={`nabra-ads-${take.dialectId}-${take.voiceId.toLowerCase()}.wav`}
                             className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-1.5 text-xs font-medium text-emerald-300 hover:bg-emerald-500/20"
                           >
                             <Download className="h-3.5 w-3.5" />
@@ -1588,10 +1606,10 @@ export default function App() {
         <div className="mx-auto max-w-[1280px] px-6 py-7">
           <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
             <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2 text-sm font-bold text-slate-100">
-              <span dir="ltr" className="text-amber-400">Hamza Ads</span>
+              <span dir="ltr" className="text-amber-400">Nabra Ads</span>
               <span className="text-slate-500" aria-hidden="true">·</span>
               <span className="text-xs sm:text-sm font-normal text-slate-400">
-                جميع الحقوق محفوظة © {new Date().getFullYear()} Hamza Ads Studio
+                جميع الحقوق محفوظة © {new Date().getFullYear()} Nabra Ads Studio
               </span>
             </div>
             <div className="text-xs text-slate-400">

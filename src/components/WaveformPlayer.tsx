@@ -244,7 +244,7 @@ export const WaveformPlayer: React.FC<WaveformPlayerProps> = ({
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `hamza-ads-${take.dialectId}.srt`;
+    a.download = `nabra-ads-${take.dialectId}.srt`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
@@ -497,7 +497,7 @@ export const WaveformPlayer: React.FC<WaveformPlayerProps> = ({
       <div className="pt-4 border-t border-white/8 flex flex-wrap items-center gap-2.5">
         <a
           href={activeAudioUrl}
-          download={`hamza-ads-${take.dialectId}-${take.voiceId.toLowerCase()}.wav`}
+          download={`nabra-ads-${take.dialectId}-${take.voiceId.toLowerCase()}.wav`}
           className="flex-1 inline-flex items-center justify-center gap-2 rounded-lg border border-emerald-500/35 bg-emerald-500/15 px-4 py-2.5 text-sm font-semibold text-emerald-300 transition-colors hover:bg-emerald-500/25 focus-visible:outline-2 focus-visible:outline-emerald-400 whitespace-nowrap"
         >
           <Download className="h-4 w-4" />

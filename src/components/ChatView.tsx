@@ -29,9 +29,9 @@ interface ChatViewProps {
 }
 
 const QUICK_IDEA_PROMPTS = [
-  "اكتبلي إعلان تشويقي لبراند عطور فاخرة بخصم 30% وشحن مجاني",
-  "حوار ثنائي مضحك ومقنع لمطعم مشويات على الفحم عرض اللمة",
-  "إعلان ريلز سريع لعيادة أسنان وتجميل بخصم لأول 20 حجز",
+  "اكتب لي إعلاناً تشويقياً لعلامة عطور فاخرة بخصم 30% وشحن مجاني",
+  "حوار ثنائي طريف ومقنع لمطعم مشويات على الفحم بعرض عائلي",
+  "إعلان ريلز سريع لعيادة أسنان وتجميل بخصم لأول 20 حجزاً",
   "سكربت قوي لشركة تسويق إلكتروني واستعادة الحسابات المعطلة",
 ];
 
@@ -176,7 +176,7 @@ export const ChatView: React.FC<ChatViewProps> = ({
                   >
                     <div className="mb-1 flex items-center gap-2 text-[11px] text-slate-400">
                       <span className="font-semibold text-amber-300">
-                        {isUser ? "أنت" : "مخرج Hamza Ads"}
+                        {isUser ? "أنت" : "مخرج Nabra Ads"}
                       </span>
                       {msg.dialectLabel && (
                         <>

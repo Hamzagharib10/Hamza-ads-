@@ -60,7 +60,8 @@ export type DialectId =
   | "en-US"
   | "en-GB"
   | "fr-FR"
-  | "it-IT";
+  | "it-IT"
+  | "es-ES";
 
 export interface DialectOption {
   id: DialectId;
@@ -69,7 +70,7 @@ export interface DialectOption {
   countryLabel: string;
   dialectLabel: string;
   dir: "rtl" | "ltr";
-  langFamily: "ar" | "en" | "fr" | "it";
+  langFamily: "ar" | "en" | "fr" | "it" | "es";
 }
 
 export interface VoicePersona {
@@ -98,12 +99,13 @@ export interface AdCategoryPreset {
 export type StudioTab = "chat" | "preview" | "artifacts";
 
 export type QuickCategoryId =
+  | "maghreb"
   | "egypt_nile"
   | "gulf"
   | "levant_iraq"
-  | "maghreb"
-  | "english"
   | "french"
+  | "spanish"
+  | "english"
   | "italian";
 
 export interface ScriptProposal {
