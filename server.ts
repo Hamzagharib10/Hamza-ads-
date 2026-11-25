@@ -1,5 +1,7 @@
 import "dotenv/config";
+import crypto from "crypto";
 import express from "express";
+import fs from "fs";
 import http from "http";
 import path from "path";
 import { fileURLToPath } from "url";
@@ -239,11 +241,188 @@ function extractAudioFromResponse(response: {
 const app = express();
 app.use(express.json({ limit: "2mb" }));
 
+// ---------------------------------------------------------------------------
+// Usage stats — small validation test (the owner wants to measure real
+// interest before investing). Privacy-friendly by design: no scripts, texts,
+// IPs, user agents, or key values are ever stored. Visitors are counted per
+// day from a one-way hash of (client address + date); the raw address is
+// never logged or stored, and the hashes live in memory only. Totals + daily
+// counts are persisted to usage-stats.json (best-effort); on Render free the
+// disk is ephemeral, so counts reset on redeploy/restart.
+// ---------------------------------------------------------------------------
+type EndpointKey = "scriptGenerate" | "scriptChat" | "ttsGenerate";
+type EndpointStats = { calls: number; ok: number; errors: number };
+type DayStats = {
+  scriptGenerate: EndpointStats;
+  scriptChat: EndpointStats;
+  ttsGenerate: EndpointStats;
+  visitors: number;
+};
+
+const STATS_FILE = path.join(__dirname, "usage-stats.json");
+const STATS_DAYS_KEPT = 30;
+const startedAt = new Date().toISOString();
+
+function emptyEndpointStats(): EndpointStats {
+  return { calls: 0, ok: 0, errors: 0 };
+}
+function emptyDayStats(): DayStats {
+  return {
+    scriptGenerate: emptyEndpointStats(),
+    scriptChat: emptyEndpointStats(),
+    ttsGenerate: emptyEndpointStats(),
+    visitors: 0,
+  };
+}
+
+const totals: Record<EndpointKey, EndpointStats> = {
+  scriptGenerate: emptyEndpointStats(),
+  scriptChat: emptyEndpointStats(),
+  ttsGenerate: emptyEndpointStats(),
+};
+const daily: Record<string, DayStats> = {};
+const visitorHashes: Record<string, Set<string>> = {};
+
+function dayKey(date = new Date()): string {
+  return date.toISOString().slice(0, 10);
+}
+
+function pruneDaily(): void {
+  const keys = Object.keys(daily).sort();
+  while (keys.length > STATS_DAYS_KEPT) {
+    const oldest = keys.shift();
+    if (!oldest) break;
+    delete daily[oldest];
+    delete visitorHashes[oldest];
+  }
+}
+
+function dayStats(key: string): DayStats {
+  const existing = daily[key];
+  if (existing) return existing;
+  const created = emptyDayStats();
+  daily[key] = created;
+  pruneDaily();
+  return created;
+}
+
+function saveStats(): void {
+  try {
+    pruneDaily();
+    fs.writeFileSync(
+      STATS_FILE,
+      JSON.stringify({ totals, daily }, null, 2),
+      "utf-8"
+    );
+  } catch {
+    // Best-effort only: a failed stats write must never break a request.
+  }
+}
+
+function loadStats(): void {
+  try {
+    if (!fs.existsSync(STATS_FILE)) return;
+    const parsed = JSON.parse(fs.readFileSync(STATS_FILE, "utf-8")) as {
+      totals?: Record<string, EndpointStats>;
+      daily?: Record<string, DayStats>;
+    };
+    for (const key of [
+      "scriptGenerate",
+      "scriptChat",
+      "ttsGenerate",
+    ] as const) {
+      const saved = parsed.totals?.[key];
+      if (saved) {
+        totals[key] = {
+          calls: Number(saved.calls) || 0,
+          ok: Number(saved.ok) || 0,
+          errors: Number(saved.errors) || 0,
+        };
+      }
+    }
+    for (const [key, saved] of Object.entries(parsed.daily ?? {})) {
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(key) || !saved) continue;
+      const day = emptyDayStats();
+      for (const ep of [
+        "scriptGenerate",
+        "scriptChat",
+        "ttsGenerate",
+      ] as const) {
+        const s = saved[ep];
+        if (s) {
+          day[ep] = {
+            calls: Number(s.calls) || 0,
+            ok: Number(s.ok) || 0,
+            errors: Number(s.errors) || 0,
+          };
+        }
+      }
+      daily[key] = day;
+    }
+    pruneDaily();
+  } catch {
+    // Corrupt or unreadable file: start from zero, never crash the server.
+  }
+}
+
+loadStats();
+
+function visitorHash(req: express.Request): string {
+  const forwarded = req.headers["x-forwarded-for"];
+  const firstForwarded =
+    typeof forwarded === "string" ? forwarded.split(",")[0]?.trim() : "";
+  const address = firstForwarded || req.socket?.remoteAddress || "unknown";
+  return crypto
+    .createHash("sha256")
+    .update(`${address}|${dayKey()}`)
+    .digest("hex");
+}
+
+function trackCall(req: express.Request, endpoint: EndpointKey): void {
+  const key = dayKey();
+  const day = dayStats(key);
+  day[endpoint].calls += 1;
+  totals[endpoint].calls += 1;
+  const hashes = visitorHashes[key] ?? new Set<string>();
+  visitorHashes[key] = hashes;
+  const hash = visitorHash(req);
+  if (!hashes.has(hash)) {
+    hashes.add(hash);
+    day.visitors = hashes.size;
+  }
+  saveStats();
+}
+
+function trackOk(endpoint: EndpointKey): void {
+  const day = dayStats(dayKey());
+  day[endpoint].ok += 1;
+  totals[endpoint].ok += 1;
+  saveStats();
+}
+
+function trackError(endpoint: EndpointKey): void {
+  const day = dayStats(dayKey());
+  day[endpoint].errors += 1;
+  totals[endpoint].errors += 1;
+  saveStats();
+}
+
 app.get("/api/health", (_req, res) => {
   res.json({
     ok: true,
     hasApiKey: Boolean(process.env.GEMINI_API_KEY),
     hasGeminiKey: Boolean(process.env.GEMINI_API_KEY),
+  });
+});
+
+app.get("/api/stats", (_req, res) => {
+  pruneDaily();
+  res.json({
+    ok: true,
+    startedAt,
+    totals,
+    daily,
+    note: "الأرقام كتتصفّر ملي يتعاود النشر أو يتطفا السيرفر، وما كنتخزّن حتى معلومة شخصية (لا نصوص، لا IP، لا كلمات سر).",
   });
 });
 
@@ -581,6 +760,7 @@ const ttsCache = new Map<
 const MAX_TTS_CACHE = 50;
 
 app.post("/api/tts/generate", async (req, res) => {
+  trackCall(req, "ttsGenerate");
   try {
     const {
       script,
@@ -639,6 +819,7 @@ app.post("/api/tts/generate", async (req, res) => {
     });
     const cached = ttsCache.get(cacheKey);
     if (cached) {
+      trackOk("ttsGenerate");
       res.json({
         audioBase64: cached.audioBase64,
         mimeType: cached.mimeType,
@@ -755,6 +936,7 @@ app.post("/api/tts/generate", async (req, res) => {
       model: usedModel,
     });
 
+    trackOk("ttsGenerate");
     res.json({
       audioBase64: audioPart.inlineData.data,
       mimeType,
@@ -763,6 +945,7 @@ app.post("/api/tts/generate", async (req, res) => {
       model: usedModel,
     });
   } catch (err: unknown) {
+    trackError("ttsGenerate");
     console.error("TTS generation error:", err);
     const { status, message } = formatFriendlyTtsError(err);
     res.status(status).json({ error: message });
@@ -770,6 +953,7 @@ app.post("/api/tts/generate", async (req, res) => {
 });
 
 app.post("/api/script/generate", async (req, res) => {
+  trackCall(req, "scriptGenerate");
   try {
     const {
       mode,
@@ -866,6 +1050,7 @@ CTA: ${String(currentCta || "")}`;
 
       const parsed = JSON.parse((response.text ?? "{}").trim());
       console.log("Script polish ms:", Date.now() - t0);
+      trackOk("scriptGenerate");
       res.json(parsed);
       return;
     }
@@ -895,6 +1080,7 @@ CTA: ${String(currentCta || "")}`;
 
       const parsed = JSON.parse((response.text ?? "{}").trim());
       console.log("Script adapt ms:", Date.now() - t0);
+      trackOk("scriptGenerate");
       res.json(parsed);
       return;
     }
@@ -958,8 +1144,10 @@ Use "..." for natural dramatic voiceover pauses.`;
 
     const parsed = JSON.parse((response.text ?? "{}").trim());
     console.log("Script fresh ms:", Date.now() - t0);
+    trackOk("scriptGenerate");
     res.json(parsed);
   } catch (err: unknown) {
+    trackError("scriptGenerate");
     console.error("Script generation error:", err);
     const rawMsg = err instanceof Error ? err.message : "";
     const message = rawMsg.includes("GEMINI_API_KEY is missing")
@@ -970,6 +1158,7 @@ Use "..." for natural dramatic voiceover pauses.`;
 });
 
 app.post("/api/script/chat", async (req, res) => {
+  trackCall(req, "scriptChat");
   try {
     const {
       messages,
@@ -1056,8 +1245,10 @@ app.post("/api/script/chat", async (req, res) => {
     });
 
     const parsed = JSON.parse((response.text ?? "{}").trim());
+    trackOk("scriptChat");
     res.json(parsed);
   } catch (err: unknown) {
+    trackError("scriptChat");
     console.error("Script chat error:", err);
     const { status, message } = formatFriendlyGeminiError(err);
     res.status(status).json({ error: message });
