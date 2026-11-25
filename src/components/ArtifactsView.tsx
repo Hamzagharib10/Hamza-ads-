@@ -247,12 +247,7 @@ export const ArtifactsView: React.FC<ArtifactsViewProps> = ({
                         : activeTake.voiceName}
                     </div>
                     <div className="mt-0.5 text-xs text-slate-400 truncate">
-                      {activeTake.deliveryLabel} ·{" "}
-                      {masteredUrl
-                        ? "WAV 24kHz"
-                        : activeTake.mimeType?.includes("mpeg")
-                          ? "MP3 44.1kHz"
-                          : "WAV 24kHz"}
+                      {activeTake.deliveryLabel} · WAV 24kHz
                     </div>
                   </div>
                   <button
@@ -316,19 +311,11 @@ export const ArtifactsView: React.FC<ArtifactsViewProps> = ({
 
                 <a
                   href={exportAudioUrl}
-                  download={`nabra-ads-${activeTake.dialectId}-${mastering}.${
-                    masteredUrl ? "wav" : activeTake.mimeType?.includes("mpeg") ? "mp3" : "wav"
-                  }`}
+                  download={`nabra-ads-${activeTake.dialectId}-${mastering}.wav`}
                   className="w-full inline-flex items-center justify-center gap-2 rounded-lg border border-emerald-500/35 bg-emerald-500/15 px-4 py-2.5 text-sm font-semibold text-emerald-300 hover:bg-emerald-500/25 transition-colors"
                 >
                   <Download className="h-4 w-4" />
-                  <span>
-                    {masteredUrl
-                      ? "تصدير الملف الصوتي النهائي (WAV)"
-                      : activeTake.mimeType?.includes("mpeg")
-                        ? "تصدير الملف الصوتي النهائي (MP3)"
-                        : "تصدير الملف الصوتي النهائي (WAV)"}
-                  </span>
+                  <span>تصدير الملف الصوتي النهائي (WAV)</span>
                 </a>
               </>
             ) : (
@@ -383,12 +370,10 @@ export const ArtifactsView: React.FC<ArtifactsViewProps> = ({
                       <div className="flex items-center gap-2 shrink-0">
                         <a
                           href={take.audioUrl}
-                          download={`nabra-ads-${take.dialectId}.${
-                            take.mimeType?.includes("mpeg") ? "mp3" : "wav"
-                          }`}
+                          download={`nabra-ads-${take.dialectId}.wav`}
                           className="rounded-md border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-1 text-[11px] font-medium text-emerald-300 hover:bg-emerald-500/20"
                         >
-                          {take.mimeType?.includes("mpeg") ? "MP3" : "WAV"}
+                          WAV
                         </a>
                         <button
                           type="button"

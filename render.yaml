@@ -1,6 +1,7 @@
 # Render Blueprint — Nabra Ads Studio (free plan)
-# No secret values in this file. ELEVENLABS_API_KEY / GEMINI_API_KEY are
-# entered in the Render dashboard (sync: false = Render asks for the value).
+# No secret values in this file. GEMINI_API_KEY is entered in the Render
+# dashboard (sync: false = Render asks for the value). It is the only key
+# the app needs: Gemini powers both script generation and voice (TTS).
 services:
   - type: web
     name: nabra-ads-studio
@@ -11,7 +12,5 @@ services:
     envVars:
       - key: NODE_ENV
         value: production
-      - key: ELEVENLABS_API_KEY
-        sync: false
       - key: GEMINI_API_KEY
         sync: false
