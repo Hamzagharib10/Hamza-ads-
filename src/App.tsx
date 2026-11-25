@@ -61,6 +61,16 @@ function base64ToWavBlob(
     rawBytes[i] = binary.charCodeAt(i);
   }
 
+  // ElevenLabs returns MP3 (audio/mpeg): keep the bytes as-is. Wrapping
+  // them in a WAV header (as the old Gemini 24kHz PCM path did) corrupts playback.
+  if (mimeType.includes("mpeg") || mimeType.includes("mp3")) {
+    const blob = new Blob([rawBytes.slice().buffer], { type: "audio/mpeg" });
+    const url = URL.createObjectURL(blob);
+    // 128 kbps MP3 is about 16,000 bytes per second.
+    const durationEst = Math.max(1, rawBytes.length / 16000);
+    return { blob, url, durationEst };
+  }
+
   const hasRiffHeader =
     rawBytes.length >= 12 &&
     rawBytes[0] === 0x52 &&
@@ -566,7 +576,7 @@ export default function App() {
 
       const { blob, url, durationEst } = base64ToWavBlob(
         data.audioBase64,
-        data.mimeType || "audio/wav"
+        data.mimeType || "audio/mpeg"
       );
       const voiceObj = VOICE_PERSONAS.find((v) => v.id === selectedVoice);
       const secondVoiceObj = VOICE_PERSONAS.find((v) => v.id === secondVoice);
@@ -598,7 +608,7 @@ export default function App() {
             : bodyText,
         ctaText: scriptMode === "dialogue" ? dialogueCtaB : ctaText,
         audioUrl: url,
-        mimeType: data.mimeType || "audio/wav",
+        mimeType: data.mimeType || "audio/mpeg",
         durationSec: durationEst,
       };
 
@@ -1575,11 +1585,15 @@ export default function App() {
 
                           <a
                             href={take.audioUrl}
-                            download={`nabra-ads-${take.dialectId}-${take.voiceId.toLowerCase()}.wav`}
+                            download={`nabra-ads-${take.dialectId}-${take.voiceId.toLowerCase()}.${
+                              take.mimeType?.includes("mpeg") ? "mp3" : "wav"
+                            }`}
                             className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-1.5 text-xs font-medium text-emerald-300 hover:bg-emerald-500/20"
                           >
                             <Download className="h-3.5 w-3.5" />
-                            <span>تحميل WAV</span>
+                            <span>
+                              {take.mimeType?.includes("mpeg") ? "تحميل MP3" : "تحميل WAV"}
+                            </span>
                           </a>
 
                           <button

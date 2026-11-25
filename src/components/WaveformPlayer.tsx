@@ -264,7 +264,7 @@ export const WaveformPlayer: React.FC<WaveformPlayerProps> = ({
             جاري تسجيل الصوت بالاستوديو...
           </span>
           <span className="text-xs font-mono tabular-nums text-amber-400">
-            WAV · 24kHz
+            MP3 · 44.1kHz
           </span>
         </div>
         <div className="h-16 flex items-center gap-1 px-2 rounded-lg bg-[#0B0E14] border border-white/5">
@@ -352,7 +352,13 @@ export const WaveformPlayer: React.FC<WaveformPlayerProps> = ({
             <span aria-hidden="true">·</span>
             <span>{take.deliveryLabel}</span>
             <span aria-hidden="true">·</span>
-            <span className="font-mono tabular-nums">WAV 24kHz</span>
+            <span className="font-mono tabular-nums">
+              {processedUrl
+                ? "WAV 24kHz"
+                : take.mimeType?.includes("mpeg")
+                  ? "MP3 44.1kHz"
+                  : "WAV 24kHz"}
+            </span>
           </div>
         </div>
         <div className="font-mono text-sm tabular-nums text-slate-200 shrink-0" dir="ltr">
@@ -497,11 +503,19 @@ export const WaveformPlayer: React.FC<WaveformPlayerProps> = ({
       <div className="pt-4 border-t border-white/8 flex flex-wrap items-center gap-2.5">
         <a
           href={activeAudioUrl}
-          download={`nabra-ads-${take.dialectId}-${take.voiceId.toLowerCase()}.wav`}
+          download={`nabra-ads-${take.dialectId}-${take.voiceId.toLowerCase()}.${
+            processedUrl ? "wav" : take.mimeType?.includes("mpeg") ? "mp3" : "wav"
+          }`}
           className="flex-1 inline-flex items-center justify-center gap-2 rounded-lg border border-emerald-500/35 bg-emerald-500/15 px-4 py-2.5 text-sm font-semibold text-emerald-300 transition-colors hover:bg-emerald-500/25 focus-visible:outline-2 focus-visible:outline-emerald-400 whitespace-nowrap"
         >
           <Download className="h-4 w-4" />
-          <span>تحميل الصوت النهائي (WAV)</span>
+          <span>
+            {processedUrl
+              ? "تحميل الصوت النهائي (WAV)"
+              : take.mimeType?.includes("mpeg")
+                ? "تحميل الصوت النهائي (MP3)"
+                : "تحميل الصوت النهائي (WAV)"}
+          </span>
         </a>
 
         <button

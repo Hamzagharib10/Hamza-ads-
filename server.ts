@@ -3,19 +3,19 @@ import express from "express";
 import http from "http";
 import path from "path";
 import { fileURLToPath } from "url";
-import {
-  GoogleGenAI,
-  LiveServerMessage,
-  Modality,
-  ThinkingLevel,
-  Type,
-} from "@google/genai";
+import { GoogleGenAI, ThinkingLevel, Type } from "@google/genai";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const PORT = Number(process.env.PORT) || 3000;
 
+// ---------------------------------------------------------------------------
+// Gemini — used ONLY for script writing (/api/script/generate, /api/script/chat).
+// Voice generation moved to ElevenLabs (see below). The app stays usable
+// without GEMINI_API_KEY: script buttons fail gracefully in Arabic and the
+// user can type the script manually.
+// ---------------------------------------------------------------------------
 function getAiClient(apiVersion?: string): GoogleGenAI {
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) {
@@ -32,20 +32,105 @@ function getAiClient(apiVersion?: string): GoogleGenAI {
   });
 }
 
-const VALID_VOICES = new Set(["Charon", "Fenrir", "Puck", "Kore", "Zephyr"]);
+function formatFriendlyGeminiError(err: unknown): { status: number; message: string } {
+  const raw = err instanceof Error ? err.message : String(err);
+  if (raw.includes("GEMINI_API_KEY is missing")) {
+    return {
+      status: 500,
+      message:
+        "مفتاح Gemini (GEMINI_API_KEY) غير مفعّل على الخادم — توليد السكريبت غير متاح، ويمكنك كتابة السكريبت يدوياً.",
+    };
+  }
+  if (raw.includes("429") || raw.includes("RESOURCE_EXHAUSTED") || raw.toLowerCase().includes("quota")) {
+    return { status: 429, message: "تم بلوغ حد طلبات Gemini. جرب لاحقاً." };
+  }
+  if (raw.includes("403") || raw.includes("PERMISSION_DENIED") || raw.includes("API_KEY_INVALID")) {
+    return { status: 403, message: "مفتاح Gemini API غير صالح أو لا يملك صلاحية التشغيل." };
+  }
+  return { status: 500, message: raw || "تعذر توليد السكريبت حالياً." };
+}
 
-const VOICE_PERSONA_DIRECTIONS: Record<string, string> = {
-  Charon:
-    "Deep, resonant, charismatic commercial male voiceover artist. Authoritative, cinematic warmth with dramatic vocal weight.",
-  Fenrir:
-    "Grounded, mature, trustworthy male narrator. Steady, confident, reassuring tone that builds immediate credibility.",
-  Puck:
-    "Energetic, sharp, lively young male commercial voiceover for high-converting Reels, TikTok, and social ads. Fast hook punch.",
-  Kore:
-    "Warm, expressive, persuasive female commercial narrator. Crystal-clear articulation, engaging empathy, confident close.",
-  Zephyr:
-    "Smooth, modern, friendly female marketing voiceover. Natural conversational rhythm with crisp, uplifting energy.",
+// ---------------------------------------------------------------------------
+// ElevenLabs TTS — the only voice engine now.
+// Voice names shown in the UI (Charon, Fenrir, ...) are kept as-is; the
+// server maps each name to its ElevenLabs voice_id. Verified 2026-11-25:
+// voices list + TTS call work with these IDs (model eleven_multilingual_v2).
+// ---------------------------------------------------------------------------
+const ELEVENLABS_MODEL = "eleven_multilingual_v2";
+const ELEVENLABS_OUTPUT_FORMAT = "mp3_44100_128";
+
+const ELEVEN_VOICE_IDS: Record<string, string> = {
+  Charon: "nPczCjzI2devNBz1zQrb", // Brian — deep dramatic male
+  Fenrir: "cjVigY5qzO86Huf0OWal", // Eric — mature trustworthy male
+  Puck: "TX3LPaxmHKxFdv7VOQHJ", // Liam — energetic young male
+  Kore: "EXAVITQu4vr4xnSDxMaL", // Sarah — warm female
+  Zephyr: "Xb7hH8MSUJpSbSDYk0k2", // Alice — smooth friendly female
 };
+const ELEVEN_FALLBACK_VOICE_ID = "JBFqnCBsd6RMkjVDRZzb"; // George
+
+const VALID_VOICES = new Set(Object.keys(ELEVEN_VOICE_IDS));
+
+function getElevenLabsKey(): string {
+  const apiKey = process.env.ELEVENLABS_API_KEY;
+  if (!apiKey) {
+    throw new Error("ELEVENLABS_API_KEY is missing");
+  }
+  return apiKey;
+}
+
+function elevenVoiceId(voiceName: string): string {
+  return ELEVEN_VOICE_IDS[voiceName] ?? ELEVEN_FALLBACK_VOICE_ID;
+}
+
+function formatFriendlyTtsError(err: unknown): { status: number; message: string } {
+  const raw = err instanceof Error ? err.message : String(err);
+  if (raw.includes("ELEVENLABS_API_KEY is missing")) {
+    return { status: 500, message: "مفتاح ElevenLabs غير مفعّل على الخادم." };
+  }
+  if (raw.includes("429") || raw.toLowerCase().includes("quota") || raw.includes("quota_exceeded")) {
+    return {
+      status: 429,
+      message:
+        "تم بلوغ حد ElevenLabs (الكوتا أو الحد اليومي). تحقق من رصيد حساب ElevenLabs وجرب لاحقاً.",
+    };
+  }
+  if (
+    raw.includes("401") ||
+    raw.includes("403") ||
+    raw.includes("missing_permissions") ||
+    raw.includes("text_to_speech")
+  ) {
+    return {
+      status: 403,
+      message: "مفتاح ElevenLabs غير صالح أو بلا صلاحية Text to Speech.",
+    };
+  }
+  return { status: 500, message: raw || "حدث خطأ غير متوقع أثناء توليد الصوت." };
+}
+
+async function elevenLabsTts(
+  voiceId: string,
+  text: string,
+  signal: AbortSignal
+): Promise<Buffer> {
+  const apiKey = getElevenLabsKey();
+  const url = `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}?output_format=${ELEVENLABS_OUTPUT_FORMAT}`;
+  const res = await fetch(url, {
+    method: "POST",
+    headers: {
+      "xi-api-key": apiKey,
+      "Content-Type": "application/json",
+      Accept: "audio/mpeg",
+    },
+    body: JSON.stringify({ text, model_id: ELEVENLABS_MODEL }),
+    signal,
+  });
+  if (!res.ok) {
+    const body = await res.text().catch(() => "");
+    throw new Error(`ElevenLabs ${res.status}: ${body.slice(0, 500)}`);
+  }
+  return Buffer.from(await res.arrayBuffer());
+}
 
 const DELIVERY_STYLE_DIRECTIONS: Record<string, string> = {
   suspense:
@@ -202,20 +287,6 @@ const DIALECT_TTS_DIRECTIONS: Record<
   },
 };
 
-function extractAudioFromResponse(response: {
-  candidates?: Array<{
-    content?: {
-      parts?: Array<{
-        inlineData?: { data?: string; mimeType?: string };
-      }>;
-    };
-  }>;
-}) {
-  return response.candidates?.[0]?.content?.parts?.find(
-    (part) => part.inlineData?.data
-  );
-}
-
 const app = express();
 app.use(express.json({ limit: "2mb" }));
 
@@ -223,335 +294,10 @@ app.get("/api/health", (_req, res) => {
   res.json({
     ok: true,
     hasApiKey: Boolean(process.env.GEMINI_API_KEY),
+    hasGeminiKey: Boolean(process.env.GEMINI_API_KEY),
+    hasElevenLabsKey: Boolean(process.env.ELEVENLABS_API_KEY),
   });
 });
-
-function isQuotaError(err: unknown): boolean {
-  const msg = err instanceof Error ? err.message : String(err);
-  return (
-    msg.includes("429") ||
-    msg.includes("RESOURCE_EXHAUSTED") ||
-    msg.toLowerCase().includes("quota")
-  );
-}
-
-function formatFriendlyTtsError(err: unknown): { status: number; message: string } {
-  const raw = err instanceof Error ? err.message : String(err);
-  if (raw.includes("GEMINI_API_KEY is missing")) {
-    return {
-      status: 500,
-      message: "مفتاح التشغيل (GEMINI_API_KEY) غير مفعّل على الخادم.",
-    };
-  }
-  if (isQuotaError(err)) {
-    return {
-      status: 429,
-      message:
-        "تم بلوغ الحد اليومي المجاني لطلبات توليد الصوت على مفتاح API الحالي. جرب لاحقاً أو قم بترقية المفتاح من إعدادات المشروع (Settings > Secrets).",
-    };
-  }
-  if (raw.includes("403") || raw.includes("PERMISSION_DENIED") || raw.includes("API_KEY_INVALID")) {
-    return {
-      status: 403,
-      message: "مفتاح Gemini API غير صالح أو لا يملك صلاحية التشغيل. تحقق من Secrets.",
-    };
-  }
-  return {
-    status: 500,
-    message: raw || "حدث خطأ غير متوقع أثناء توليد الصوت.",
-  };
-}
-
-async function synthesizeSoloWithModel(params: {
-  model: string;
-  script: string;
-  voiceName: string;
-  stylePrompt: string;
-  fallbackDirection: string;
-}) {
-  const ttsConfig = {
-    responseModalities: ["AUDIO"],
-    speechConfig: {
-      voiceConfig: {
-        prebuiltVoiceConfig: { voiceName: params.voiceName },
-      },
-    },
-  };
-
-  try {
-    const aiBeta = getAiClient("v1beta");
-    const response = await aiBeta.models.generateContent({
-      model: params.model,
-      contents: [
-        {
-          role: "user",
-          parts: [
-            {
-              text: params.script,
-              speechMetadata: {
-                style: params.stylePrompt,
-              },
-            },
-          ],
-        },
-      ],
-      config: ttsConfig,
-    });
-    return extractAudioFromResponse(response);
-  } catch (betaErr: unknown) {
-    const msg = betaErr instanceof Error ? betaErr.message : String(betaErr);
-    if (msg.includes("speechMetadata") || msg.includes("Cannot find field")) {
-      try {
-        const aiAlpha = getAiClient("v1alpha");
-        const response = await aiAlpha.models.generateContent({
-          model: params.model,
-          contents: [
-            {
-              role: "user",
-              parts: [
-                {
-                  text: params.script,
-                  speechMetadata: {
-                    style: params.stylePrompt,
-                  },
-                },
-              ],
-            },
-          ],
-          config: ttsConfig,
-        });
-        return extractAudioFromResponse(response);
-      } catch {
-        const aiBetaFallback = getAiClient("v1beta");
-        const directedPrompt = `[Direction: ${params.fallbackDirection}]\n\n${params.script}`;
-        const response = await aiBetaFallback.models.generateContent({
-          model: params.model,
-          contents: [
-            {
-              role: "user",
-              parts: [{ text: directedPrompt }],
-            },
-          ],
-          config: ttsConfig,
-        });
-        return extractAudioFromResponse(response);
-      }
-    }
-    throw betaErr;
-  }
-}
-
-async function synthesizeDialogueWithModel(params: {
-  model: string;
-  turns: Array<{ speaker?: string; text?: string }>;
-  selectedVoice: string;
-  selectedSecondVoice: string;
-  styleBase: string;
-}) {
-  const parts = params.turns.map((turn) => {
-    const speakerName = turn.speaker === "SpeakerB" ? "SpeakerB" : "SpeakerA";
-    const voicePersona =
-      speakerName === "SpeakerA"
-        ? VOICE_PERSONA_DIRECTIONS[params.selectedVoice]
-        : VOICE_PERSONA_DIRECTIONS[params.selectedSecondVoice];
-    return {
-      text: `${speakerName}: ${turn.text!.trim()}`,
-      speechMetadata: {
-        speaker: speakerName,
-        style: `${params.styleBase} Voice Persona: ${voicePersona}`,
-      },
-    };
-  });
-
-  const multiConfig = {
-    responseModalities: ["AUDIO"],
-    speechConfig: {
-      multiSpeakerVoiceConfig: {
-        speakerVoiceConfigs: [
-          {
-            speaker: "SpeakerA",
-            voiceConfig: { prebuiltVoiceConfig: { voiceName: params.selectedVoice } },
-          },
-          {
-            speaker: "SpeakerB",
-            voiceConfig: {
-              prebuiltVoiceConfig: { voiceName: params.selectedSecondVoice },
-            },
-          },
-        ],
-      },
-    },
-  };
-
-  try {
-    const aiBeta = getAiClient("v1beta");
-    const response = await aiBeta.models.generateContent({
-      model: params.model,
-      contents: [{ role: "user", parts }],
-      config: multiConfig,
-    });
-    return extractAudioFromResponse(response);
-  } catch (betaErr: unknown) {
-    const msg = betaErr instanceof Error ? betaErr.message : String(betaErr);
-    if (msg.includes("speechMetadata") || msg.includes("Cannot find field")) {
-      const fallbackParts = params.turns.map((turn) => {
-        const speakerName = turn.speaker === "SpeakerB" ? "SpeakerB" : "SpeakerA";
-        return `${speakerName}: ${turn.text!.trim()}`;
-      });
-      const aiBetaFallback = getAiClient("v1beta");
-      const response = await aiBetaFallback.models.generateContent({
-        model: params.model,
-        contents: [
-          {
-            role: "user",
-            parts: [
-              {
-                text: `[Direction: ${params.styleBase}]\n\n${fallbackParts.join("\n")}`,
-              },
-            ],
-          },
-        ],
-        config: multiConfig,
-      });
-      return extractAudioFromResponse(response);
-    }
-    throw betaErr;
-  }
-}
-
-function wrapPcm24kToWav(pcmBuffer: Buffer): Buffer {
-  const dataLength = pcmBuffer.length;
-  const header = Buffer.alloc(44);
-  header.write("RIFF", 0);
-  header.writeUInt32LE(36 + dataLength, 4);
-  header.write("WAVE", 8);
-  header.write("fmt ", 12);
-  header.writeUInt32LE(16, 16);
-  header.writeUInt16LE(1, 20); // PCM
-  header.writeUInt16LE(1, 22); // Mono
-  header.writeUInt32LE(24000, 24);
-  header.writeUInt32LE(48000, 28);
-  header.writeUInt16LE(2, 32);
-  header.writeUInt16LE(16, 34);
-  header.write("data", 36);
-  header.writeUInt32LE(dataLength, 40);
-  return Buffer.concat([header, pcmBuffer]);
-}
-
-async function synthesizeWithLiveFallback(params: {
-  voiceName: string;
-  dialectStyle: string;
-  deliveryDirection: string;
-  spokenText: string;
-}): Promise<{ inlineData: { data: string; mimeType: string } }> {
-  const ai = getAiClient("v1beta");
-  const chunks: Buffer[] = [];
-
-  return await new Promise((resolve, reject) => {
-    let settled = false;
-    let sessionRef: Awaited<ReturnType<typeof ai.live.connect>> | null = null;
-    const timeout = setTimeout(() => {
-      if (!settled) {
-        settled = true;
-        try {
-          sessionRef?.close();
-        } catch {
-          // ignore
-        }
-        if (chunks.length > 0) {
-          const wav = wrapPcm24kToWav(Buffer.concat(chunks));
-          resolve({ inlineData: { data: wav.toString("base64"), mimeType: "audio/wav" } });
-        } else {
-          reject(new Error("Live audio fallback timed out"));
-        }
-      }
-    }, 25000);
-
-    const finish = () => {
-      if (settled) return;
-      settled = true;
-      clearTimeout(timeout);
-      try {
-        sessionRef?.close();
-      } catch {
-        // ignore
-      }
-      if (chunks.length === 0) {
-        reject(new Error("Live audio fallback returned no audio"));
-        return;
-      }
-      const wav = wrapPcm24kToWav(Buffer.concat(chunks));
-      resolve({ inlineData: { data: wav.toString("base64"), mimeType: "audio/wav" } });
-    };
-
-    ai.live
-      .connect({
-        model: "gemini-3.8-live",
-        config: {
-          responseModalities: [Modality.AUDIO],
-          speechConfig: {
-            voiceConfig: { prebuiltVoiceConfig: { voiceName: params.voiceName } },
-          },
-          systemInstruction: `You are a professional commercial voiceover artist. Read the exact user script verbatim with zero extra words, zero greetings, and zero commentary. Dialect & Voice Direction: ${params.dialectStyle}. Performance Arc: ${params.deliveryDirection}`,
-        },
-        callbacks: {
-          onmessage: (message: LiveServerMessage) => {
-            for (const part of message.serverContent?.modelTurn?.parts ?? []) {
-              if (part.inlineData?.data) {
-                chunks.push(Buffer.from(part.inlineData.data, "base64"));
-              }
-            }
-            if (message.serverContent?.turnComplete || message.serverContent?.generationComplete) {
-              finish();
-            }
-          },
-          onerror: (err: unknown) => {
-            if (!settled) {
-              settled = true;
-              clearTimeout(timeout);
-              reject(err instanceof Error ? err : new Error(String(err)));
-            }
-          },
-          onclose: () => {
-            if (!settled && chunks.length > 0) {
-              finish();
-            }
-          },
-        },
-      })
-      .then((session) => {
-        sessionRef = session;
-        if (settled) {
-          try {
-            session.close();
-          } catch {
-            // ignore
-          }
-          return;
-        }
-        session.sendClientContent({
-          turns: [
-            {
-              role: "user",
-              parts: [
-                {
-                  text: `Read this exact commercial script aloud now without adding or changing a single word:\n\n${params.spokenText}`,
-                },
-              ],
-            },
-          ],
-          turnComplete: true,
-        });
-      })
-      .catch((err) => {
-        if (!settled) {
-          settled = true;
-          clearTimeout(timeout);
-          reject(err);
-        }
-      });
-  });
-}
 
 const ttsCache = new Map<
   string,
@@ -589,8 +335,8 @@ app.post("/api/tts/generate", async (req, res) => {
       typeof secondVoiceName === "string" && VALID_VOICES.has(secondVoiceName)
         ? secondVoiceName
         : selectedVoice === "Kore"
-        ? "Charon"
-        : "Kore";
+          ? "Charon"
+          : "Kore";
 
     const selectedDelivery =
       typeof deliveryStyle === "string" && DELIVERY_STYLE_DIRECTIONS[deliveryStyle]
@@ -600,13 +346,6 @@ app.post("/api/tts/generate", async (req, res) => {
       typeof dialectId === "string" && DIALECT_TTS_DIRECTIONS[dialectId]
         ? dialectId
         : "ar-MA";
-    const dialectSpec = DIALECT_TTS_DIRECTIONS[selectedDialectKey];
-
-    const styleBase = [
-      `Language & Dialect: ${dialectSpec.ttsStyle}`,
-      `Performance Arc: ${DELIVERY_STYLE_DIRECTIONS[selectedDelivery]}`,
-      "Observe punctuation pauses naturally: pause briefly on ellipses (...), emphasize questions and exclamation hooks.",
-    ].join(" ");
 
     const cacheKey = JSON.stringify({
       isDialogue,
@@ -628,121 +367,70 @@ app.post("/api/tts/generate", async (req, res) => {
       return;
     }
 
-    let audioPart:
-      | { inlineData?: { data?: string; mimeType?: string } }
-      | undefined;
-    let usedModel = "gemini-3.8-flash-lite-tts";
+    // 45s total timeout for the whole TTS request (solo or all dialogue turns).
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 45000);
 
-    if (isDialogue) {
-      const cleanTurns = (dialogueTurns as Array<{ speaker?: string; text?: string }>)
-        .filter((t) => typeof t?.text === "string" && t.text.trim().length > 0)
-        .slice(0, 8);
+    let audioBuffer: Buffer;
+    try {
+      if (isDialogue) {
+        const cleanTurns = (dialogueTurns as Array<{ speaker?: string; text?: string }>)
+          .filter((t) => typeof t?.text === "string" && t.text.trim().length > 0)
+          .slice(0, 8);
 
-      if (cleanTurns.length < 2) {
-        res.status(400).json({ error: "وضع الحوار الثنائي يتطلب سطرين على الأقل." });
-        return;
-      }
+        if (cleanTurns.length < 2) {
+          clearTimeout(timeoutId);
+          res.status(400).json({ error: "وضع الحوار الثنائي يتطلب سطرين على الأقل." });
+          return;
+        }
 
-      const candidateModels = ["gemini-3.8-flash-tts", "gemini-3.8-flash-lite-tts"];
-      let lastErr: unknown = null;
-      for (const model of candidateModels) {
-        try {
-          audioPart = await synthesizeDialogueWithModel({
-            model,
-            turns: cleanTurns,
-            selectedVoice,
-            selectedSecondVoice,
-            styleBase,
-          });
-          usedModel = model;
-          if (audioPart?.inlineData?.data) break;
-        } catch (err: unknown) {
-          lastErr = err;
-          console.warn(`Dialogue TTS attempt failed on ${model}:`, err instanceof Error ? err.message : err);
+        const parts: Buffer[] = [];
+        for (const turn of cleanTurns) {
+          const isB = turn.speaker === "SpeakerB";
+          const voiceId = elevenVoiceId(isB ? selectedSecondVoice : selectedVoice);
+          parts.push(await elevenLabsTts(voiceId, turn.text!.trim(), controller.signal));
         }
+        // MP3 frames concatenate cleanly; players play the parts in order.
+        audioBuffer = Buffer.concat(parts);
+      } else {
+        audioBuffer = await elevenLabsTts(
+          elevenVoiceId(selectedVoice),
+          script.trim(),
+          controller.signal
+        );
       }
-      if (!audioPart?.inlineData?.data) {
-        try {
-          const joinedDialogue = cleanTurns.map((t) => t.text!.trim()).join("\n");
-          audioPart = await synthesizeWithLiveFallback({
-            voiceName: selectedVoice,
-            dialectStyle: dialectSpec.ttsStyle,
-            deliveryDirection: DELIVERY_STYLE_DIRECTIONS[selectedDelivery],
-            spokenText: joinedDialogue,
-          });
-          usedModel = "gemini-3.8-live";
-        } catch (liveErr: unknown) {
-          console.warn("Live dialogue fallback failed:", liveErr instanceof Error ? liveErr.message : liveErr);
-          if (lastErr) throw lastErr;
-          throw liveErr;
-        }
-      }
-    } else {
-      const stylePrompt = `${styleBase} Voice Persona: ${VOICE_PERSONA_DIRECTIONS[selectedVoice]}`;
-      const fallbackDirection = `${dialectSpec.ttsStyle} ${DELIVERY_STYLE_DIRECTIONS[selectedDelivery]}`;
-      const candidateModels = ["gemini-3.8-flash-lite-tts", "gemini-3.8-flash-tts"];
-      let lastErr: unknown = null;
-
-      for (const model of candidateModels) {
-        try {
-          audioPart = await synthesizeSoloWithModel({
-            model,
-            script: script.trim(),
-            voiceName: selectedVoice,
-            stylePrompt,
-            fallbackDirection,
-          });
-          usedModel = model;
-          if (audioPart?.inlineData?.data) break;
-        } catch (err: unknown) {
-          lastErr = err;
-          console.warn(`Solo TTS attempt failed on ${model}:`, err instanceof Error ? err.message : err);
-        }
-      }
-      if (!audioPart?.inlineData?.data) {
-        try {
-          audioPart = await synthesizeWithLiveFallback({
-            voiceName: selectedVoice,
-            dialectStyle: dialectSpec.ttsStyle,
-            deliveryDirection: DELIVERY_STYLE_DIRECTIONS[selectedDelivery],
-            spokenText: script.trim(),
-          });
-          usedModel = "gemini-3.8-live";
-        } catch (liveErr: unknown) {
-          console.warn("Live solo fallback failed:", liveErr instanceof Error ? liveErr.message : liveErr);
-          if (lastErr) throw lastErr;
-          throw liveErr;
-        }
-      }
+    } finally {
+      clearTimeout(timeoutId);
     }
 
-    if (!audioPart?.inlineData?.data) {
+    if (!audioBuffer || audioBuffer.length === 0) {
       res.status(502).json({
         error: "لم يُرجع نموذج الصوت بيانات صوتية. حاول تعديل النص والمحاولة مرة أخرى.",
       });
       return;
     }
 
-    const mimeType = audioPart.inlineData.mimeType || "audio/wav";
+    const mimeType = "audio/mpeg";
+    const audioBase64 = audioBuffer.toString("base64");
     if (ttsCache.size >= MAX_TTS_CACHE) {
       const firstKey = ttsCache.keys().next().value;
       if (firstKey) ttsCache.delete(firstKey);
     }
-    ttsCache.set(cacheKey, {
-      audioBase64: audioPart.inlineData.data,
-      mimeType,
-      model: usedModel,
-    });
+    ttsCache.set(cacheKey, { audioBase64, mimeType, model: ELEVENLABS_MODEL });
 
     res.json({
-      audioBase64: audioPart.inlineData.data,
+      audioBase64,
       mimeType,
       voiceName: selectedVoice,
       dialectId: selectedDialectKey,
-      model: usedModel,
+      model: ELEVENLABS_MODEL,
     });
   } catch (err: unknown) {
-    console.error("TTS generation error:", err);
+    console.error("TTS generation error:", err instanceof Error ? err.message : err);
+    if (err instanceof DOMException && err.name === "AbortError") {
+      res.status(504).json({ error: "استغرق توليد الصوت وقتاً طويلاً. حاول مرة أخرى." });
+      return;
+    }
     const { status, message } = formatFriendlyTtsError(err);
     res.status(status).json({ error: message });
   }
@@ -940,7 +628,10 @@ Use "..." for natural dramatic voiceover pauses.`;
     res.json(parsed);
   } catch (err: unknown) {
     console.error("Script generation error:", err);
-    const message = err instanceof Error ? err.message : "تعذر توليد السكريبت حالياً.";
+    const rawMsg = err instanceof Error ? err.message : "";
+    const message = rawMsg.includes("GEMINI_API_KEY is missing")
+      ? "مفتاح Gemini (GEMINI_API_KEY) غير مفعّل على الخادم — توليد السكريبت غير متاح، ويمكنك كتابة السكريبت يدوياً."
+      : rawMsg || "تعذر توليد السكريبت حالياً.";
     res.status(500).json({ error: message });
   }
 });
@@ -1035,10 +726,11 @@ app.post("/api/script/chat", async (req, res) => {
     res.json(parsed);
   } catch (err: unknown) {
     console.error("Script chat error:", err);
-    const { status, message } = formatFriendlyTtsError(err);
+    const { status, message } = formatFriendlyGeminiError(err);
     res.status(status).json({ error: message });
   }
 });
+
 
 async function startServer() {
   const httpServer = http.createServer(app);
